@@ -18,9 +18,11 @@ meetings = []
 def save_meetings_to_csv():
     with open("meetings.csv", mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["Title", "EST", "CST", "IST"])
-        for title, times in meetings:
-            writer.writerow([title, times["EST"], times["CST"], times["IST"]])
+        #writer.writerow(["Title", "EST", "CST", "IST"])
+        writer.writerow(["Title", "DateTime", "TimeZone"])
+        for title, dt, tz in meetings:
+            #writer.writerow([title, times["EST"], times["CST"], times["IST"]])
+            writer.writerow([title, dt.strftime("%Y-%m-%d %I:%M %p"), tz])
 
 def load_meetings_from_csv():
     if not os.path.exists("meetings.csv"):
@@ -29,12 +31,9 @@ def load_meetings_from_csv():
         reader = csv.DictReader(file)
         for row in reader:
             title = row["Title"]
-            times = {
-                "EST": row["EST"],
-                "CST": row["CST"],
-                "IST": row["IST"]
-            }
-            meetings.append((title, times))
+            dt = datetime.strptime(row["DateTime"], "%Y-%m-%d %I:%M %p")
+            tz = row["TimeZone"]
+            meetings.append((title, dt, tz))
 
 def convert_time(meeting_time, base_tz):
     base = pytz.timezone(TIMEZONES[base_tz])
@@ -60,7 +59,6 @@ def add_meeting():
     try:
         time_str = f"{hour}:{minute} {ampm}"
         meeting_time = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %I:%M %p")
-        converted_times = convert_time(meeting_time, base_tz)
     except ValueError as ve:
         messagebox.showerror("Invalid Format", f"Check date/time format: {ve}")
         return
@@ -68,7 +66,7 @@ def add_meeting():
         messagebox.showerror("Error", f"Unexpected error: {e}")
         return
 
-    meetings.append((title, converted_times))
+    meetings.append((title, meeting_time, base_tz))
     save_meetings_to_csv()
     update_meeting_list()
     clear_fields()
@@ -76,11 +74,17 @@ def add_meeting():
 def update_meeting_list():
     meeting_list.delete(*meeting_list.get_children())
 
-    # Sort by CST time (parse CST string back to datetime)
-    sorted_meetings = sorted(meetings, key=lambda x: datetime.strptime(x[1]["CST"], "%Y-%m-%d %I:%M %p"))
+    # Sort by datetime (in CST timezone)
+    def sort_key(item):
+        title, dt, tz = item
+        local = pytz.timezone(TIMEZONES[tz]).localize(dt)
+        return local.astimezone(pytz.timezone("America/Chicago"))
 
-    for title, times in sorted_meetings:
-        meeting_list.insert('', 'end', values=(title, times["EST"], times["CST"], times["IST"]))
+    sorted_meetings = sorted(meetings, key=sort_key)
+
+    for title, dt, tz in sorted_meetings:
+        converted_times = convert_time(dt, tz)
+        meeting_list.insert('', 'end', values=(title, converted_times["EST"], converted_times["CST"], converted_times["IST"]))
 
 
 def clear_fields():
@@ -91,7 +95,6 @@ def clear_fields():
     ampm_combo.set("AM")
 
 def delete_meeting():
-    global selected_index
     selected = meeting_list.focus()
     if not selected:
         messagebox.showwarning("No Selection", "Please select a meeting to delete.")
@@ -102,12 +105,10 @@ def delete_meeting():
         return
 
     try:
-        # Remove from list and update everything
         del meetings[meeting_list.index(selected)]
         update_meeting_list()
         save_meetings_to_csv()
         clear_fields()
-        selected_index = None
     except Exception as e:
         messagebox.showerror("Error", f"Could not delete: {e}")
 
@@ -137,9 +138,9 @@ date_entry = DateEntry(
     borderwidth=2
 )
 date_entry.grid(row=1, column=1, columnspan=2, sticky="ew")
-date_var.set('')  # make it look empty initially
+date_var.set('')
 
-# Time Picker (12-hour)
+# Time Picker
 tk.Label(root, text="Time").grid(row=2, column=0, sticky="w")
 hour_combo = ttk.Combobox(root, values=[f"{h:02}" for h in range(1, 13)], width=3, state="readonly")
 hour_combo.grid(row=2, column=1, sticky="w")
@@ -153,30 +154,27 @@ ampm_combo = ttk.Combobox(root, values=["AM", "PM"], width=3, state="readonly")
 ampm_combo.grid(row=2, column=1, sticky="e")
 ampm_combo.set("AM")
 
-# Time Zone Selection
+# Time Zone
 tk.Label(root, text="Base Time Zone").grid(row=3, column=0, sticky="w")
 tz_combo = ttk.Combobox(root, values=list(TIMEZONES.keys()), state="readonly")
 tz_combo.grid(row=3, column=1, columnspan=2, sticky="ew")
 tz_combo.set("CST")
 
-# Add Meeting Button
-tk.Button(root, text="Add Meeting", command=add_meeting).grid(row=4, column=0, columnspan=3, pady=10)
-# Delete Meeting Button
-tk.Button(root, text="Delete Meeting", command=delete_meeting).grid(row=4, column=2, columnspan=1, pady=10)
+# Buttons
+tk.Button(root, text="Add Meeting", command=add_meeting).grid(row=4, column=0, columnspan=2, pady=10)
+tk.Button(root, text="Delete Meeting", command=delete_meeting).grid(row=4, column=2, pady=10)
 
-
-# Meeting List Display
+# Table
 columns = ("Title", "EST", "CST", "IST")
 meeting_list = ttk.Treeview(root, columns=columns, show="headings")
 for col in columns:
     meeting_list.heading(col, text=col)
 meeting_list.grid(row=5, column=0, columnspan=3, sticky="nsew")
 
-# Resize behavior
 root.columnconfigure(1, weight=1)
 root.columnconfigure(2, weight=1)
 
-# Load and Start
+# Load and Run
 load_meetings_from_csv()
 update_meeting_list()
 root.mainloop()
