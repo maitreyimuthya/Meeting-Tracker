@@ -18,10 +18,8 @@ meetings = []
 def save_meetings_to_csv():
     with open("meetings.csv", mode='w', newline='') as file:
         writer = csv.writer(file)
-        #writer.writerow(["Title", "EST", "CST", "IST"])
         writer.writerow(["Title", "DateTime", "TimeZone"])
         for title, dt, tz in meetings:
-            #writer.writerow([title, times["EST"], times["CST"], times["IST"]])
             writer.writerow([title, dt.strftime("%Y-%m-%d %I:%M %p"), tz])
 
 def load_meetings_from_csv():
